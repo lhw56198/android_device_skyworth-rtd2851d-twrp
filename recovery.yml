@@ -1,0 +1,99 @@
+name: Build TWRP
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANIFEST_BRANCH:
+        description: 'TWRP Manifest Branch'
+        required: true
+        default: 'twrp-10.0-deprecated'
+        type: choice
+        options:
+        - twrp-12.1
+        - twrp-11.0
+        - twrp-9.0
+      DEVICE_TREE_URL:
+        description: 'Device Tree URL'
+        required: true
+        default: 'https://github.com/Alonghaz/android_device_skyworth-rtd2851d-twrp'
+      DEVICE_TREE_BRANCH:
+        description: 'Device Tree Branch'
+        required: true
+        default: 'main'
+      DEVICE_PATH:
+        description: 'Device Path (e.g. device/brand/codename)'
+        required: true
+        default: 'device/skyworth/rtd2851d'
+      DEVICE_NAME:
+        description: 'Device Name (codename)'
+        required: true
+        default: 'rtd2851d'
+      MAKEFILE_NAME:
+        description: 'Makefile Name (e.g. omni_codename)'
+        required: true
+        default: 'omni_rtd2851d'
+      BUILD_TARGET:
+        description: 'Build Target'
+        required: true
+        default: 'recoveryimage'
+
+jobs:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+    steps:
+    - name: Check Out
+      uses: actions/checkout@v4
+
+    - name: Cleanup Space
+      uses: rokibhasansagar/slimhub_actions@main
+
+    - name: Initialize Workspace
+      run: |
+        mkdir workspace
+        cd workspace
+        echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
+      id: pwd
+
+    - name: Prepare Environment
+      run: |
+        sudo apt update
+        sudo apt -y upgrade
+        sudo apt -y install git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig
+
+    - name: Install Repo Tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        git config --global user.name "Generic User"
+        git config --global user.email "generic@email.com"
+
+    - name: Sync Minimal TWRP Manifest
+      run: |
+        cd ${{ steps.pwd.outputs.workspace-folder }}
+        ~/bin/repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b ${{ inputs.MANIFEST_BRANCH }}
+        ~/bin/repo sync -j$(nproc --all) --force-sync
+
+    - name: Clone Device Tree
+      run: |
+        cd ${{ steps.pwd.outputs.workspace-folder }}
+        git clone ${{ inputs.DEVICE_TREE_URL }} -b ${{ inputs.DEVICE_TREE_BRANCH }} ${{ inputs.DEVICE_PATH }}
+
+    - name: Build Recovery
+      run: |
+        cd ${{ steps.pwd.outputs.workspace-folder }}
+        export ALLOW_MISSING_DEPENDENCIES=true
+        . build/envsetup.sh
+        lunch ${{ inputs.MAKEFILE_NAME }}-eng
+        mka ${{ inputs.BUILD_TARGET }}
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: TWRP-${{ inputs.DEVICE_NAME }}-${{ inputs.MANIFEST_BRANCH }}
+        path: |
+          ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/${{ inputs.DEVICE_NAME }}/*.img
+          ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/${{ inputs.DEVICE_NAME }}/*.zip
