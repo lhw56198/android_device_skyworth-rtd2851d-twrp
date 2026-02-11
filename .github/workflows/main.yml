@@ -9,8 +9,7 @@ on:
         default: 'twrp-10.0-deprecated'
         type: choice
         options:
-        - twrp-12.1
-        - twrp-11.0
+        - twrp-twrp-10.0-deprecated
         - twrp-9.0
       DEVICE_TREE_URL:
         description: 'Device Tree URL'
